@@ -1,0 +1,157 @@
+#!/bin/bash
+
+set -e
+
+echo "=== PA9 Runtime Startup Script ==="
+
+# Configuration
+DISPLAY_NUM=99
+VNC_PORT=5900
+NOVNC_PORT=6080
+VNC_PASSWORD=${VNC_PASSWORD:-pa9}
+WORKSPACE_DIR=/workspace
+
+# Create workspace if it doesn't exist
+mkdir -p "$WORKSPACE_DIR"
+
+# Start Xvfb
+echo "Starting Xvfb on display :$DISPLAY_NUM..."
+Xvfb :$DISPLAY_NUM -screen 0 1920x1080x24 -ac +extension GLX +render -noreset &
+XVFB_PID=$!
+sleep 2
+
+# Check if Xvfb started successfully
+if ! ps -p $XVFB_PID > /dev/null; then
+    echo "ERROR: Xvfb failed to start"
+    exit 1
+fi
+
+# Start fluxbox window manager
+echo "Starting fluxbox..."
+DISPLAY=:$DISPLAY_NUM fluxbox &
+FLUXBOX_PID=$!
+sleep 2
+
+# Start x11vnc
+echo "Starting x11vnc..."
+DISPLAY=:$DISPLAY_NUM x11vnc -display :$DISPLAY_NUM -nopw -xkb -forever -shared -rfbport $VNC_PORT -bg -o /var/log/x11vnc.log
+sleep 2
+
+# Check if x11vnc is running
+if ! pgrep -x x11vnc > /dev/null; then
+    echo "ERROR: x11vnc failed to start"
+    exit 1
+fi
+
+# Start websockify for noVNC
+echo "Starting websockify for noVNC..."
+websockify --web=/usr/share/novnc/ $NOVNC_PORT localhost:$VNC_PORT &
+WEBSOCKIFY_PID=$!
+sleep 2
+
+# Wait a bit for services to stabilize
+sleep 3
+
+# Check if PA9.jar exists
+if [ ! -f "/pa9/PA9.jar" ]; then
+    echo "WARNING: PA9.jar not found in /pa9 directory"
+    echo "Please ensure PA9.jar and required .jar files are copied to the container"
+    echo "Waiting for files to be available..."
+    
+    # Wait up to 60 seconds for files
+    for i in {1..60}; do
+        if [ -f "/pa9/PA9.jar" ]; then
+            echo "PA9.jar found!"
+            break
+        fi
+        sleep 1
+    done
+    
+    if [ ! -f "/pa9/PA9.jar" ]; then
+        echo "ERROR: PA9.jar still not found after waiting"
+        echo "Container will continue running but PA9 will not start"
+        echo "Please mount PA9.jar and required .jar files to /pa9 directory"
+    fi
+fi
+
+# Start PA9 if jar exists
+if [ -f "/pa9/PA9.jar" ]; then
+    echo "Starting PA9..."
+    
+    # Build classpath with all jar files
+    CLASSPATH="/pa9/PA9.jar"
+    for jar in /pa9/*.jar; do
+        if [ "$jar" != "/pa9/PA9.jar" ]; then
+            CLASSPATH="$CLASSPATH:$jar"
+        fi
+    done
+    
+    # Try to run PA9.jar directly first
+    DISPLAY=:$DISPLAY_NUM java -jar /pa9/PA9.jar > /var/log/pa9.log 2>&1 &
+    PA9_PID=$!
+    
+    # Wait a moment to see if it starts
+    sleep 3
+    
+    # If that didn't work, try with classpath
+    if ! ps -p $PA9_PID > /dev/null 2>&1; then
+        echo "Trying to start PA9 with classpath..."
+        DISPLAY=:$DISPLAY_NUM java -cp "$CLASSPATH" -jar /pa9/PA9.jar > /var/log/pa9.log 2>&1 &
+        PA9_PID=$!
+        sleep 3
+    fi
+    
+    # If still not working, try to extract main class from manifest
+    if ! ps -p $PA9_PID > /dev/null 2>&1; then
+        echo "Attempting to extract main class from manifest..."
+        MAIN_CLASS=$(unzip -p /pa9/PA9.jar META-INF/MANIFEST.MF | grep "Main-Class:" | cut -d' ' -f2 | tr -d '\r')
+        if [ -n "$MAIN_CLASS" ]; then
+            echo "Found main class: $MAIN_CLASS"
+            DISPLAY=:$DISPLAY_NUM java -cp "$CLASSPATH" "$MAIN_CLASS" > /var/log/pa9.log 2>&1 &
+            PA9_PID=$!
+            sleep 3
+        fi
+    fi
+    
+    if ps -p $PA9_PID > /dev/null 2>&1; then
+        echo "PA9 started successfully (PID: $PA9_PID)"
+    else
+        echo "WARNING: PA9 may not have started. Check /var/log/pa9.log for errors"
+        echo "You can try to start it manually from the VNC interface"
+    fi
+else
+    echo "PA9.jar not found. Skipping PA9 startup."
+fi
+
+echo ""
+echo "=== Services Started ==="
+echo "Xvfb PID: $XVFB_PID"
+echo "Fluxbox PID: $FLUXBOX_PID"
+echo "x11vnc: running on port $VNC_PORT"
+echo "websockify: running on port $NOVNC_PORT"
+echo "noVNC available at: http://localhost:$NOVNC_PORT/vnc.html"
+echo "Workspace directory: $WORKSPACE_DIR"
+echo ""
+echo "=== Logs ==="
+echo "PA9 logs: /var/log/pa9.log"
+echo "x11vnc logs: /var/log/x11vnc.log"
+echo ""
+echo "Container is ready. Keeping it alive..."
+
+# Keep container alive and monitor processes
+while true; do
+    sleep 60
+    
+    # Check if critical processes are still running
+    if ! ps -p $XVFB_PID > /dev/null 2>&1; then
+        echo "WARNING: Xvfb process died"
+    fi
+    
+    if ! pgrep -x x11vnc > /dev/null; then
+        echo "WARNING: x11vnc process died"
+    fi
+    
+    if ! pgrep -x websockify > /dev/null; then
+        echo "WARNING: websockify process died"
+    fi
+done

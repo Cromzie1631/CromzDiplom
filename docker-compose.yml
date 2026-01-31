@@ -1,0 +1,56 @@
+services:
+  pa9-gui:
+    build:
+      context: ./pa9-runtime
+      dockerfile: Dockerfile
+    container_name: pa9-gui
+    volumes:
+      - ./workspace:/workspace
+    ports:
+      - "6080:6080"
+    environment:
+      - DISPLAY=:99
+      - VNC_PASSWORD=pa9
+    restart: unless-stopped
+    networks:
+      - pa9-network
+
+  api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: pa9-api
+    volumes:
+      - ./workspace:/workspace
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - WORKSPACE_DIR=/workspace
+    restart: unless-stopped
+    networks:
+      - pa9-network
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: pa9-web
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_BASE=http://localhost:3001
+      - NEXT_PUBLIC_VNC_URL=http://localhost:6080/vnc.html
+    depends_on:
+      - api
+      - pa9-gui
+    restart: unless-stopped
+    networks:
+      - pa9-network
+
+networks:
+  pa9-network:
+    driver: bridge
+
+volumes:
+  workspace:
