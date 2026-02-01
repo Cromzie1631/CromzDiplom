@@ -2,9 +2,14 @@
 
 import { useState, useEffect, useRef } from 'react'
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3001'
-const VNC_BASE = process.env.NEXT_PUBLIC_VNC_URL || 'http://localhost:6080/vnc.html'
-const VNC_URL = VNC_BASE.includes('?') ? `${VNC_BASE}&resize=scale` : `${VNC_BASE}?resize=scale`
+// API идёт через тот же origin (Next.js проксирует /api на backend)
+const VNC_PORT = process.env.NEXT_PUBLIC_VNC_PORT || '6080'
+
+function getVncUrl(): string {
+  if (typeof window === 'undefined') return `http://localhost:${VNC_PORT}/vnc.html?resize=scale`
+  const base = `http://${window.location.hostname}:${VNC_PORT}/vnc.html`
+  return base.includes('?') ? `${base}&resize=scale` : `${base}?resize=scale`
+}
 
 interface FileInfo {
   name: string
@@ -17,7 +22,12 @@ export default function PA9Page() {
   const [status, setStatus] = useState<'idle' | 'copied' | 'uploading'>('idle')
   const [uploadMsg, setUploadMsg] = useState('')
   const [showHelp, setShowHelp] = useState(true)
+  const [vncUrl, setVncUrl] = useState('')
   const uploadInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    setVncUrl(getVncUrl())
+  }, [])
 
   useEffect(() => {
     loadFiles()
@@ -25,7 +35,7 @@ export default function PA9Page() {
 
   const loadFiles = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/files`)
+      const res = await fetch(`/api/files`)
       if (res.ok) {
         const data = await res.json()
         setFiles(data.files || [])
@@ -52,7 +62,7 @@ export default function PA9Page() {
     formData.append('file', file)
 
     try {
-      const res = await fetch(`${API_BASE}/api/upload`, { method: 'POST', body: formData })
+      const res = await fetch(`/api/upload`, { method: 'POST', body: formData })
       if (res.ok) {
         setUploadMsg(`Файл ${file.name} загружен. Ниже откройте его в PA9.`)
         loadFiles()
@@ -70,13 +80,21 @@ export default function PA9Page() {
   }
 
   const handleDownload = (name: string) => {
-    window.open(`${API_BASE}/api/download/${encodeURIComponent(name)}`, '_blank')
+    const url = `/api/download/${encodeURIComponent(name)}`
+    const a = document.createElement('a')
+    a.href = url
+    a.download = name
+    a.target = '_blank'
+    a.rel = 'noopener'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
   }
 
   const handleDelete = async (name: string) => {
     if (!confirm(`Удалить файл «${name}»?`)) return
     try {
-      const res = await fetch(`${API_BASE}/api/files/${encodeURIComponent(name)}`, { method: 'DELETE' })
+      const res = await fetch(`/api/files/${encodeURIComponent(name)}`, { method: 'DELETE' })
       if (res.ok) {
         loadFiles()
       } else {
@@ -226,7 +244,7 @@ export default function PA9Page() {
       <div className="flex-1 min-h-[600px] p-6 md:p-8">
         <div className="max-w-6xl mx-auto h-full min-h-[500px] apple-card overflow-hidden">
           <iframe
-            src={VNC_URL}
+            src={vncUrl || 'about:blank'}
             className="w-full h-full min-h-[500px] border-0"
             title="PA9"
             allow="clipboard-read; clipboard-write; fullscreen"

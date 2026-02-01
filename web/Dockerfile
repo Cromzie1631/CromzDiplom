@@ -10,6 +10,8 @@ RUN npm install
 
 # Rebuild the source code only when needed
 FROM base AS builder
+ARG API_UPSTREAM=http://localhost:3001
+ENV API_UPSTREAM=$API_UPSTREAM
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .

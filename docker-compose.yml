@@ -35,6 +35,8 @@ services:
     build:
       context: ./web
       dockerfile: Dockerfile
+      args:
+        - API_UPSTREAM=http://api:3001
     container_name: pa9-web
     ports:
       - "3000:3000"
