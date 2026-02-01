@@ -1,0 +1,9 @@
+{
+  "name": "pa9-session-manager",
+  "version": "1.0.0",
+  "description": "PA9 Multi-Session Manager",
+  "main": "session-manager.js",
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

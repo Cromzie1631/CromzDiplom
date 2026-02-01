@@ -6,14 +6,13 @@ services:
     container_name: pa9-gui
     volumes:
       - ./workspace:/workspace
-    ports:
-      - "6080:6080"
     environment:
-      - DISPLAY=:99
-      - VNC_PASSWORD=pa9
-    restart: unless-stopped
+      - SESSION_MANAGER_PORT=6090
+      - WORKSPACE_DIR=/workspace
+      - SESSION_IDLE_MINUTES=30
     networks:
       - pa9-network
+    restart: unless-stopped
 
   api:
     build:
@@ -23,13 +22,16 @@ services:
     volumes:
       - ./workspace:/workspace
     ports:
-      - "3001:3001"
+      - "127.0.0.1:3001:3001"
     environment:
       - PORT=3001
       - WORKSPACE_DIR=/workspace
+      - PA9_GUI_INTERNAL=http://pa9-gui:6090
     restart: unless-stopped
     networks:
       - pa9-network
+    depends_on:
+      - pa9-gui
 
   web:
     build:
@@ -39,20 +41,13 @@ services:
         - API_UPSTREAM=http://api:3001
     container_name: pa9-web
     ports:
-      - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_BASE=http://localhost:3001
-      - NEXT_PUBLIC_VNC_URL=http://localhost:6080/vnc.html
-    depends_on:
-      - api
-      - pa9-gui
+      - "127.0.0.1:3000:3000"
     restart: unless-stopped
     networks:
       - pa9-network
+    depends_on:
+      - api
 
 networks:
   pa9-network:
     driver: bridge
-
-volumes:
-  workspace:

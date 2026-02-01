@@ -1,40 +1,33 @@
-FROM eclipse-temurin:8-jre-jammy
+FROM node:18-bullseye
 
-# Install required packages
+# Install Java and X11 dependencies
 RUN apt-get update && apt-get install -y \
+    openjdk-11-jre \
     xvfb \
     fluxbox \
     x11vnc \
     novnc \
     websockify \
-    wget \
-    unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# Create workspace directory
-RUN mkdir -p /workspace
+# Create directories
+RUN mkdir -p /workspace /app
 
-# Create directory for PA9 files
-RUN mkdir -p /pa9
+# Copy PA9 files
+COPY *.jar /app/
+COPY PA9.cfg /app/
 
-# Copy startup script
-COPY start.sh /start.sh
-RUN chmod +x /start.sh
+# Copy session manager
+COPY session-manager.js /app/session-manager.js
+COPY package.json /app/package.json
 
-# Note: PA9.jar and *.jar files should be copied here before building
-# Or mounted as volume. For now, we expect them to be in the build context.
-# Copy any .jar files from build context (if they exist)
-COPY *.jar /pa9/
-COPY PA9.cfg /pa9/PA9.cfg
+WORKDIR /app
 
-# Set working directory
-WORKDIR /pa9
+# Install Node dependencies
+RUN npm install --production
 
-# Set display
-ENV DISPLAY=:99
+# Expose session manager port
+EXPOSE 6090
 
-# Expose noVNC port
-EXPOSE 6080
-
-# Start script
-CMD ["/start.sh"]
+# Start session manager
+CMD ["node", "/app/session-manager.js"]

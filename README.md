@@ -2,6 +2,10 @@
 
 Полнофункциональный веб-сайт с встроенным Java GUI приложением PA9, доступным через браузер.
 
+**Режим работы:** Multi-session — каждый пользователь получает изолированную сессию PA9 с отдельным рабочим столом и файлами через WebSocket.
+
+**Продакшн:** https://pa9-64.176.64.242.nip.io
+
 ## Структура проекта
 
 ```
@@ -242,16 +246,68 @@ docker compose build --no-cache
 docker compose up
 ```
 
-## Архитектура
+## Multi-Session Mode
 
-- **Frontend**: Next.js 14 (App Router) + TypeScript + Tailwind CSS
-- **Backend**: Express.js + TypeScript + Multer для загрузки файлов
+### Архитектура
+
+Каждый пользователь получает изолированную сессию PA9:
+
+- **Session Manager** (pa9-gui) — создаёт отдельные процессы для каждой сессии
+- **API** (Express) — WebSocket proxy + управление сессиями
+- **Frontend** (Next.js) — noVNC клиент через `/api/session/:id/ws`
+- **Nginx** — проксирует HTTP и WebSocket на один домен
+
+### Как это работает
+
+1. Пользователь открывает `/pa9` → нажимает "Запустить PA9"
+2. Frontend вызывает `POST /api/session` → API обращается к Session Manager:
+   - Создаётся уникальный sessionId
+   - Запускаются процессы: Xvfb, fluxbox, PA9, x11vnc, websockify
+   - Создаётся папка `workspace/sessions/{sessionId}`
+   - Выделяются порты для VNC и WebSocket
+3. Frontend подключается через noVNC к `wss://.../api/session/:id/ws`
+4. API проксирует WebSocket на внутренний websockify сессии
+5. Файлы сохраняются в отдельной папке сессии
+6. Сессия автоматически удаляется через 30 минут idle или по кнопке
+
+### Настройка Nginx (для продакшн)
+
+Скопируйте готовый конфиг:
+
+```bash
+sudo cp scripts/nginx/pa9.conf /etc/nginx/sites-available/pa9
+sudo ln -s /etc/nginx/sites-available/pa9 /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Конфиг проксирует:
+- `/` → Next.js (3000)
+- `/api` → Express (3001) с WebSocket upgrade
+
+### Переменные окружения
+
+**pa9-gui (Session Manager):**
+- `SESSION_MANAGER_PORT` — порт HTTP API (по умолчанию 6090)
+- `WORKSPACE_DIR` — базовая папка (по умолчанию /workspace)
+- `SESSION_IDLE_MINUTES` — таймаут idle (по умолчанию 30)
+
+**api (Express):**
+- `PORT` — порт API (по умолчанию 3001)
+- `PA9_GUI_INTERNAL` — адрес Session Manager (по умолчанию http://pa9-gui:6090)
+
+### Компоненты
+
+- **Frontend**: Next.js 14 + TypeScript + Tailwind + @novnc/novnc
+- **Backend**: Express.js + TypeScript + http-proxy + ws + archiver
+- **Session Manager**: Node.js + Express (внутри pa9-gui)
 - **PA9 Runtime**: Docker контейнер с:
-  - OpenJDK 8
+  - Node.js 18
+  - OpenJDK 11
   - Xvfb (виртуальный X-дисплей)
   - Fluxbox (оконный менеджер)
   - x11vnc (VNC сервер)
-  - noVNC + websockify (веб-клиент VNC)
+  - websockify (WebSocket → VNC proxy)
 
 ## Продакшн
 
@@ -266,13 +322,20 @@ NEXT_PUBLIC_SITE_URL=https://your-domain.com
 ## Безопасность
 
 ⚠️ **Важно для продакшн**:
-- Добавьте аутентификацию для API
-- Настройте HTTPS
-- Ограничьте доступ к VNC (добавьте пароль или аутентификацию)
-- Настройте CORS для API
-- Добавьте rate limiting
+- Добавьте аутентификацию для API (JWT, OAuth)
+- Настройте HTTPS (Let's Encrypt)
+- VNC-пароли генерируются автоматически для каждой сессии
+- Настройте rate limiting для создания сессий
+- Ограничьте TTL сессий (по умолчанию 2 часа)
+- Мониторьте использование ресурсов Docker
 
-Текущая версия предназначена для локальной разработки и не включает эти меры безопасности.
+**Multi-session безопасность:**
+- Каждая сессия изолирована (отдельные процессы + папка)
+- Сессии автоматически удаляются по idle timeout (30 мин)
+- Файлы доступны только в рамках sessionId
+- Path traversal защита на уровне API
+- WebSocket проксируется через Express (нет прямого доступа к VNC)
+- Порты 3000/3001 слушают только на 127.0.0.1
 
 ## Лицензия
 
