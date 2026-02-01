@@ -10,11 +10,19 @@ RUN npm install
 
 # Rebuild the source code only when needed
 FROM base AS builder
-ARG API_UPSTREAM=http://localhost:3001
+ARG API_UPSTREAM=http://api:3001
 ENV API_UPSTREAM=$API_UPSTREAM
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+# Download noVNC for /novnc/ (same-origin, no mixed content)
+RUN apk add --no-cache wget && \
+    mkdir -p /app/public/novnc && cd /tmp && \
+    wget -q https://github.com/novnc/noVNC/archive/refs/tags/v1.4.0.tar.gz -O novnc.tar.gz && \
+    tar xzf novnc.tar.gz && \
+    cp -r noVNC-1.4.0/* /app/public/novnc/ && \
+    rm -rf novnc.tar.gz noVNC-1.4.0
 
 RUN npm run build
 

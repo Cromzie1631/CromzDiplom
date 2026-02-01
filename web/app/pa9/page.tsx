@@ -1,7 +1,10 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import VNCViewer from './VNCViewer'
+
+function getVncUrl(sessionId: string): string {
+  return `/novnc/vnc.html?autoconnect=1&resize=scale&path=${encodeURIComponent(`api/session/${sessionId}/ws`)}`
+}
 
 interface FileInfo {
   name: string
@@ -342,8 +345,15 @@ export default function PA9Page() {
 
       {/* PA9 VNC */}
       <div className="flex-1 min-h-[600px] p-6 md:p-8">
-        <div className="max-w-6xl mx-auto h-full min-h-[500px]">
-          {session && <VNCViewer sessionId={session.sessionId} />}
+        <div className="max-w-6xl mx-auto h-full min-h-[500px] apple-card overflow-hidden">
+          {session && (
+            <iframe
+              src={getVncUrl(session.sessionId)}
+              className="w-full h-full min-h-[500px] border-0"
+              allow="clipboard-read; clipboard-write; fullscreen"
+              title="PA9"
+            />
+          )}
         </div>
       </div>
     </div>
